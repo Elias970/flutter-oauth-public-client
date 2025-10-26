@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
+import 'settings.dart';
 
 import 'callback_handler.dart';
 
@@ -26,22 +27,14 @@ class AuthResult {
 /// A lightweight, manual implementation of OAuth 2.0 Authorization Code Flow
 /// with PKCE (RFC 7636), without external OAuth libraries.
 class AuthService {
-  // --- Configuration (adjust to match your Authorization Server) ---
-  final Uri authorizationEndpoint = Uri.parse('http://localhost:9001/authorize');
-  final Uri tokenEndpoint = Uri.parse('http://localhost:9001/token');
+  AuthConfig _config;
 
-  // The client identifier registered with the Authorization Server.
-  // TODO: Change this to your actual client id.
-  // Aligned with demo server registry
-  final String clientId = 'oauth-app-client-1';
+  AuthService({AuthConfig? config}) : _config = config ?? AuthConfig.defaults();
 
-  // The custom scheme redirect URI that brings the user back into the app.
-  // Must be registered in iOS Info.plist under CFBundleURLTypes.
-  final Uri redirectUri = Uri.parse('com.pkceauth.ios:/callback');
-
-  // The requested scopes (adjust as needed or leave empty if your AS doesn't require scopes).
-  // Aligned with demo server registry
-  final String scope = 'profile read write';
+  AuthConfig get config => _config;
+  void updateConfig(AuthConfig config) {
+    _config = config;
+  }
 
   // In-memory state for the latest login attempt (not persisted).
   String? _lastState;
@@ -60,11 +53,11 @@ class AuthService {
     _lastState = state;
 
     // 2) Build the authorization URL
-    final authUrl = authorizationEndpoint.replace(queryParameters: {
+    final authUrl = _config.authorizationEndpoint.replace(queryParameters: {
       'response_type': 'code',
-      'client_id': clientId,
-      'redirect_uri': redirectUri.toString(),
-      'scope': scope,
+      'client_id': _config.clientId,
+      'redirect_uri': _config.redirectUri.toString(),
+      'scope': _config.scope,
       'state': state,
       'code_challenge': codeChallenge,
       'code_challenge_method': 'S256',
@@ -120,13 +113,12 @@ class AuthService {
   ///  - res2 -> http://localhost:9002/resource2
   ///  - res3 -> http://localhost:9002/resource3
   Future<http.Response> fetchResourceByKey(String accessToken, String key) async {
-    final pathMap = {
-      'res1': '/resource/profile',
-      'res2': '/resource/read',
-      'res3': '/resource/write',
+    final uri = switch (key) {
+      'res1' => _config.resourceProfile,
+      'res2' => _config.resourceRead,
+      'res3' => _config.resourceWrite,
+      _ => _config.resourceProfile,
     };
-    final path = pathMap[key] ?? '/resource';
-    final uri = Uri.parse('http://localhost:9002$path');
     final headers = <String, String>{
       'Authorization': 'Bearer $accessToken',
       'Accept': 'application/json',
@@ -145,13 +137,13 @@ class AuthService {
     final body = {
       'grant_type': 'authorization_code',
       'code': code,
-      'redirect_uri': redirectUri.toString(),
-      'client_id': clientId,
+      'redirect_uri': _config.redirectUri.toString(),
+      'client_id': _config.clientId,
       'code_verifier': codeVerifier,
     };
 
     final resp = await http.post(
-      tokenEndpoint,
+      _config.tokenEndpoint,
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',

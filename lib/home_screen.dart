@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'callback_handler.dart';
 
 import 'auth_service.dart';
+import 'settings.dart';
 
 /// Simple UI:
 /// - Shows a "Login" button to start the PKCE flow
@@ -16,15 +17,16 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _auth = AuthService();
+  late AuthService _auth;
+  AuthConfig _config = AuthConfig.defaults();
   bool _loading = false;
   String? _accessToken;
-  String? _error;
   String? _lastRedirectUrl;
 
   @override
   void initState() {
     super.initState();
+    _auth = AuthService(config: _config);
     // Listen for any redirect arriving at any time (useful for testing the scheme first).
     CallbackHandler.instance.initialize();
     CallbackHandler.instance.onRedirect.listen((uri) {
@@ -45,7 +47,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _login() async {
     setState(() {
       _loading = true;
-      _error = null;
       _accessToken = null;
     });
     try {
@@ -54,9 +55,10 @@ class _HomeScreenState extends State<HomeScreen> {
         _accessToken = result.accessToken;
       });
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-      });
+      // Show error via snackbar for better visibility
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Login fehlgeschlagen: $e')),
+      );
     } finally {
       setState(() {
         _loading = false;
@@ -99,7 +101,16 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('PKCEAuthiOS')),
+      appBar: AppBar(
+        title: const Text('PKCEAuthiOS'),
+        actions: [
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings),
+            onPressed: _openSettings,
+          )
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -194,4 +205,27 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  Future<void> _openSettings() async {
+    final result = await showModalBottomSheet<AuthConfig>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => SettingsSheet(initial: _config),
+    );
+    if (result != null) {
+      setState(() {
+        _config = result;
+        _auth = AuthService(config: _config);
+        _accessToken = null;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Einstellungen gespeichert.')),
+        );
+      }
+    }
+  }
 }
+
+// SettingsSheet moved to settings.dart
